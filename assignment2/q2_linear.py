@@ -187,7 +187,7 @@ class Linear(DQN):
         ##################### YOUR CODE HERE - 4-5 lines #############
         
         best_target_q = tf.reduce_max(target_q, axis=1)
-        Q_samp = self.r + tf.cast(self.done_mask, tf.float32) * self.config.gamma * best_target_q
+        Q_samp = self.r + (1.0 - tf.cast(self.done_mask, tf.float32)) * self.config.gamma * best_target_q
         Q_sa = tf.reduce_sum(q * tf.one_hot(self.a, self.env.action_space.n), axis=1)
         self.loss = tf.reduce_mean(tf.squared_difference(Q_samp, Q_sa))
 
