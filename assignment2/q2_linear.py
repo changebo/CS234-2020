@@ -229,7 +229,7 @@ class Linear(DQN):
         #################### YOUR CODE HERE - 8-12 lines #############
 
         var_list = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
-        optimizer = tf.train.AdamOptimizer()
+        optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
         grads_and_vars = optimizer.compute_gradients(self.loss, var_list=var_list)
         if self.config.grad_clip:
             grads_and_vars = [(tf.clip_by_norm(grad, self.config.clip_val), var) for grad, var in grads_and_vars]
