@@ -4,3 +4,4 @@
 * `brew uninstall --ignore-dependencies gcc@9`
 * `brew install gcc@6`
 * `pip install mujoco-py==1.50.1`
+* `pip install -U gym==0.10.3`
