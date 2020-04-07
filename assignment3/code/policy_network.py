@@ -15,12 +15,14 @@ from config import get_config
 from baseline_network import BaselineNetwork
 from network_utils import build_mlp
 
+
 class PG(object):
-  """
+    """
   Abstract Class for implementing a Policy Gradient Based Algorithm
   """
-  def __init__(self, env, config, r_seed, logger=None):
-    """
+
+    def __init__(self, env, config, r_seed, logger=None):
+        """
     Initialize Policy Gradient Class
 
     Args:
@@ -33,32 +35,34 @@ class PG(object):
     self.action_dim, and self.lr in other methods.
 
     """
-    # directory for training outputs
-    if not os.path.exists(config.output_path):
-      os.makedirs(config.output_path)
+        # directory for training outputs
+        if not os.path.exists(config.output_path):
+            os.makedirs(config.output_path)
 
-    # store hyperparameters
-    self.config = config
-    self.r_seed = r_seed
+        # store hyperparameters
+        self.config = config
+        self.r_seed = r_seed
 
-    self.logger = logger
-    if logger is None:
-      self.logger = get_logger(config.log_path)
-    self.env = env
-    self.env.seed(self.r_seed)
+        self.logger = logger
+        if logger is None:
+            self.logger = get_logger(config.log_path)
+        self.env = env
+        self.env.seed(self.r_seed)
 
-    # discrete vs continuous action space
-    self.discrete = isinstance(env.action_space, gym.spaces.Discrete)
-    self.observation_dim = self.env.observation_space.shape[0]
-    self.action_dim = self.env.action_space.n if self.discrete else self.env.action_space.shape[0]
+        # discrete vs continuous action space
+        self.discrete = isinstance(env.action_space, gym.spaces.Discrete)
+        self.observation_dim = self.env.observation_space.shape[0]
+        self.action_dim = (
+            self.env.action_space.n if self.discrete else self.env.action_space.shape[0]
+        )
 
-    self.lr = self.config.learning_rate
-    
-    # build model
-    self.build()
+        self.lr = self.config.learning_rate
 
-  def add_placeholders_op(self):
-    """
+        # build model
+        self.build()
+
+    def add_placeholders_op(self):
+        """
     Add placeholders for observation, action, and advantage:
         self.observation_placeholder, type: tf.float32
         self.action_placeholder, type: depends on the self.discrete
@@ -68,15 +72,24 @@ class PG(object):
     HINT: In the case of continuous action space, an action will be specified by
     'self.action_dim' float32 numbers (i.e. a vector with size 'self.action_dim')
     """
-    #######################################################
-    #########   YOUR CODE HERE - 4-6 lines.   ############
-    
-    # TODO
-    #######################################################
-    #########          END YOUR CODE.          ############
+        #######################################################
+        #########   YOUR CODE HERE - 4-6 lines.   ############
 
-  def build_policy_network_op(self, scope = "policy_network"):
-    """
+        self.observation_placeholder = tf.placeholder(
+            tf.float32, shape=(None, self.observation_dim)
+        )
+        self.action_placeholder = (
+            tf.placeholder(tf.int32, shape=(None,))
+            if self.discrete
+            else tf.placeholder(tf.float32, shape=(None, self.action_dim))
+        )
+        self.advantage_placeholder = tf.placeholder(tf.float32, shape=(None,))
+
+        #######################################################
+        #########          END YOUR CODE.          ############
+
+    def build_policy_network_op(self, scope="policy_network"):
+        """
     Build the policy network, construct the tensorflow operation to sample
     actions from the policy network outputs, and compute the log probabilities
     of the actions taken (for computing the loss later). These operations are
@@ -123,14 +136,50 @@ class PG(object):
             HINT: use tf.contrib.distributions.MultivariateNormalDiag
 
     """
-    #######################################################
-    #########   YOUR CODE HERE - 8-12 lines.   ############
+        #######################################################
+        #########   YOUR CODE HERE - 8-12 lines.   ############
 
-    #######################################################
-    #########          END YOUR CODE.          ############
+        if self.discrete:
+            action_logits = build_mlp(
+                mlp_input=self.observation_placeholder,
+                output_size=self.action_dim,
+                scope=scope,
+                n_layers=self.config.n_layers,
+                size=self.config.layer_size,
+                output_activation=None,
+            )
+            self.sampled_action = tf.compat.v1.squeeze(
+                tf.compat.v1.multinomial(logits=action_logits, num_samples=1), axis=-1
+            )
+            self.logprob = -tf.nn.sparse_softmax_cross_entropy_with_logits(
+                labels=self.action_placeholder, logits=action_logits
+            )
+        else:
+            action_means = build_mlp(
+                mlp_input=self.observation_placeholder,
+                output_size=self.action_dim,
+                scope=scope,
+                n_layers=self.config.n_layers,
+                size=self.config.layer_size,
+                output_activation=None,
+            )
+            with tf.variable_scope(scope, reuse=tf.compat.v1.AUTO_REUSE):
+                log_std = tf.compat.v1.get_variable("log_std", shape=(self.action_dim,))
+            action_stds = tf.compat.v1.exp(log_std)
+            self.sampled_action = (
+                tf.compat.v1.random_normal(shape=(self.action_dim,)) * action_stds
+                + action_means
+            )
+            mvn = tf.contrib.distributions.MultivariateNormalDiag(
+                loc=action_means, scale_diag=action_stds
+            )
+            self.logprob = mvn.log_prob(self.action_placeholder)
 
-  def add_loss_op(self):
-    """
+        #######################################################
+        #########          END YOUR CODE.          ############
+
+    def add_loss_op(self):
+        """
     Compute the loss, averaged for a given batch.
 
     Recall the update for REINFORCE with advantage:
@@ -145,106 +194,121 @@ class PG(object):
 
     """
 
-    ######################################################
-    #########   YOUR CODE HERE - 1-2 lines.   ############
-    
-    # TODO
-    #######################################################
-    #########          END YOUR CODE.          ############
+        ######################################################
+        #########   YOUR CODE HERE - 1-2 lines.   ############
 
-  def add_optimizer_op(self):
-    """
+        self.loss = -tf.reduce_mean(self.logprob * self.advantage_placeholder)
+
+        #######################################################
+        #########          END YOUR CODE.          ############
+
+    def add_optimizer_op(self):
+        """
     Set 'self.train_op' using AdamOptimizer
     HINT: Use self.lr, and minimize self.loss
     """
-    ######################################################
-    #########   YOUR CODE HERE - 1-2 lines.   ############
-    
-    # TODO
-    #######################################################
-    #########          END YOUR CODE.          ############
+        ######################################################
+        #########   YOUR CODE HERE - 1-2 lines.   ############
 
-  def build(self):
-    """
+        optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
+        self.train_op = optimizer.minimize(self.loss)
+
+        #######################################################
+        #########          END YOUR CODE.          ############
+
+    def build(self):
+        """
     Build the model by adding all necessary variables.
 
     You don't have to change anything here - we are just calling
     all the operations you already defined above to build the tensorflow graph.
     """
 
-    # add placeholders
-    self.add_placeholders_op()
-    # create policy net
-    self.build_policy_network_op()
-    # add square loss
-    self.add_loss_op()
-    # add optmizer for the main networks
-    self.add_optimizer_op()
+        # add placeholders
+        self.add_placeholders_op()
+        # create policy net
+        self.build_policy_network_op()
+        # add square loss
+        self.add_loss_op()
+        # add optmizer for the main networks
+        self.add_optimizer_op()
 
-    # add baseline
-    if self.config.use_baseline:
-      # check if the baseline is enabled and instantiate the baseline network in that case
-      self.baseline_network = BaselineNetwork(self.env, self.config, self.observation_placeholder)
-      self.baseline_network.add_baseline_op()
+        # add baseline
+        if self.config.use_baseline:
+            # check if the baseline is enabled and instantiate the baseline network in that case
+            self.baseline_network = BaselineNetwork(
+                self.env, self.config, self.observation_placeholder
+            )
+            self.baseline_network.add_baseline_op()
 
-  def initialize(self):
-    """
+    def initialize(self):
+        """
     Assumes the graph has been constructed (have called self.build())
     Creates a tf Session and run initializer of variables
 
     You don't have to change or use anything here.
     """
-    # setting the seed
-    #pdb.set_trace()
+        # setting the seed
+        # pdb.set_trace()
 
-    # create tf session
-    self.sess = tf.Session()
-    
-    # tensorboard stuff
-    self.add_summary()
-    # initiliaze all variables
-    init = tf.global_variables_initializer()
-    self.sess.run(init)
+        # create tf session
+        self.sess = tf.Session()
 
-    if self.config.use_baseline:
-      self.baseline_network.set_session(self.sess)
+        # tensorboard stuff
+        self.add_summary()
+        # initiliaze all variables
+        init = tf.global_variables_initializer()
+        self.sess.run(init)
 
-  def add_summary(self):
-    """
+        if self.config.use_baseline:
+            self.baseline_network.set_session(self.sess)
+
+    def add_summary(self):
+        """
     Tensorboard stuff.
 
     You don't have to change or use anything here.
     """
-    # extra placeholders to log stuff from python
-    self.avg_reward_placeholder = tf.placeholder(tf.float32, shape=(), name="avg_reward")
-    self.max_reward_placeholder = tf.placeholder(tf.float32, shape=(), name="max_reward")
-    self.std_reward_placeholder = tf.placeholder(tf.float32, shape=(), name="std_reward")
+        # extra placeholders to log stuff from python
+        self.avg_reward_placeholder = tf.placeholder(
+            tf.float32, shape=(), name="avg_reward"
+        )
+        self.max_reward_placeholder = tf.placeholder(
+            tf.float32, shape=(), name="max_reward"
+        )
+        self.std_reward_placeholder = tf.placeholder(
+            tf.float32, shape=(), name="std_reward"
+        )
 
-    self.eval_reward_placeholder = tf.placeholder(tf.float32, shape=(), name="eval_reward")
+        self.eval_reward_placeholder = tf.placeholder(
+            tf.float32, shape=(), name="eval_reward"
+        )
 
-    # extra summaries from python -> placeholders
-    tf.summary.scalar("Avg Reward", self.avg_reward_placeholder)
-    tf.summary.scalar("Max Reward", self.max_reward_placeholder)
-    tf.summary.scalar("Std Reward", self.std_reward_placeholder)
-    tf.summary.scalar("Eval Reward", self.eval_reward_placeholder)
+        # extra summaries from python -> placeholders
+        tf.summary.scalar("Avg Reward", self.avg_reward_placeholder)
+        tf.summary.scalar("Max Reward", self.max_reward_placeholder)
+        tf.summary.scalar("Std Reward", self.std_reward_placeholder)
+        tf.summary.scalar("Eval Reward", self.eval_reward_placeholder)
 
-    # logging
-    self.merged = tf.summary.merge_all()
-    self.file_writer = tf.summary.FileWriter(self.config.output_path,self.sess.graph)
+        # logging
+        self.merged = tf.summary.merge_all()
+        self.file_writer = tf.summary.FileWriter(
+            self.config.output_path, self.sess.graph
+        )
 
-  def init_averages(self):
-    """
+    def init_averages(self):
+        """
     Defines extra attributes for tensorboard.
 
     You don't have to change or use anything here.
     """
-    self.avg_reward = 0.
-    self.max_reward = 0.
-    self.std_reward = 0.
-    self.eval_reward = 0.
+        self.avg_reward = 0.0
+        self.max_reward = 0.0
+        self.std_reward = 0.0
+        self.eval_reward = 0.0
 
-  def update_averages(self, rewards, scores_eval):
-    """
+    def update_averages(self, rewards, scores_eval):
+        """
     Update the averages.
 
     You don't have to change or use anything here.
@@ -253,32 +317,32 @@ class PG(object):
         rewards: deque
         scores_eval: list
     """
-    self.avg_reward = np.mean(rewards)
-    self.max_reward = np.max(rewards)
-    self.std_reward = np.sqrt(np.var(rewards) / len(rewards))
+        self.avg_reward = np.mean(rewards)
+        self.max_reward = np.max(rewards)
+        self.std_reward = np.sqrt(np.var(rewards) / len(rewards))
 
-    if len(scores_eval) > 0:
-      self.eval_reward = scores_eval[-1]
+        if len(scores_eval) > 0:
+            self.eval_reward = scores_eval[-1]
 
-  def record_summary(self, t):
-    """
+    def record_summary(self, t):
+        """
     Add summary to tensorboard
 
     You don't have to change or use anything here.
     """
 
-    fd = {
-      self.avg_reward_placeholder: self.avg_reward,
-      self.max_reward_placeholder: self.max_reward,
-      self.std_reward_placeholder: self.std_reward,
-      self.eval_reward_placeholder: self.eval_reward,
-    }
-    summary = self.sess.run(self.merged, feed_dict=fd)
-    # tensorboard stuff
-    self.file_writer.add_summary(summary, t)
+        fd = {
+            self.avg_reward_placeholder: self.avg_reward,
+            self.max_reward_placeholder: self.max_reward,
+            self.std_reward_placeholder: self.std_reward,
+            self.eval_reward_placeholder: self.eval_reward,
+        }
+        summary = self.sess.run(self.merged, feed_dict=fd)
+        # tensorboard stuff
+        self.file_writer.add_summary(summary, t)
 
-  def sample_path(self, env, num_episodes = None):
-    """
+    def sample_path(self, env, num_episodes=None):
+        """
     Sample paths (trajectories) from the environment.
 
     Args:
@@ -298,42 +362,47 @@ class PG(object):
     just so you understand how we are taking actions in the environment
     and generating batches to train on.
     """
-    episode = 0
-    episode_rewards = []
-    paths = []
-    t = 0
-    
-    while (num_episodes or t < self.config.batch_size):
-      state = env.reset()
-      states, actions, rewards = [], [], []
-      episode_reward = 0
+        episode = 0
+        episode_rewards = []
+        paths = []
+        t = 0
 
-      for step in range(self.config.max_ep_len):
-        states.append(state)
-        action = self.sess.run(self.sampled_action, feed_dict={self.observation_placeholder : states[-1][None]})[0]
-        state, reward, done, info = env.step(action)
-        actions.append(action)
-        rewards.append(reward)
-        episode_reward += reward
-        t += 1
-        if (done or step == self.config.max_ep_len-1):
-          episode_rewards.append(episode_reward)
-          break
-        if (not num_episodes) and t == self.config.batch_size:
-          break
+        while num_episodes or t < self.config.batch_size:
+            state = env.reset()
+            states, actions, rewards = [], [], []
+            episode_reward = 0
 
-      path = {"observation" : np.array(states),
-                      "reward" : np.array(rewards),
-                      "action" : np.array(actions)}
-      paths.append(path)
-      episode += 1
-      if num_episodes and episode >= num_episodes:
-        break
+            for step in range(self.config.max_ep_len):
+                states.append(state)
+                action = self.sess.run(
+                    self.sampled_action,
+                    feed_dict={self.observation_placeholder: states[-1][None]},
+                )[0]
+                state, reward, done, info = env.step(action)
+                actions.append(action)
+                rewards.append(reward)
+                episode_reward += reward
+                t += 1
+                if done or step == self.config.max_ep_len - 1:
+                    episode_rewards.append(episode_reward)
+                    break
+                if (not num_episodes) and t == self.config.batch_size:
+                    break
 
-    return paths, episode_rewards
+            path = {
+                "observation": np.array(states),
+                "reward": np.array(rewards),
+                "action": np.array(actions),
+            }
+            paths.append(path)
+            episode += 1
+            if num_episodes and episode >= num_episodes:
+                break
 
-  def get_returns(self, paths):
-    """
+        return paths, episode_rewards
+
+    def get_returns(self, paths):
+        """
     Calculate the returns G_t for each timestep
 
     Args:
@@ -356,21 +425,25 @@ class PG(object):
     TODO: compute and return G_t for each timestep. Use self.config.gamma.
     """
 
-    all_returns = []
-    for path in paths:
-      rewards = path["reward"]
-      #######################################################
-      #########   YOUR CODE HERE - 5-10 lines.   ############
-      
-      #######################################################
-      #########          END YOUR CODE.          ############
-      all_returns.append(returns)
-    returns = np.concatenate(all_returns)
+        all_returns = []
+        for path in paths:
+            rewards = path["reward"]
+            #######################################################
+            #########   YOUR CODE HERE - 5-10 lines.   ############
 
-    return returns
+            returns = rewards[:]
+            for i in reversed(range(len(returns) - 1)):
+                returns[i] += self.config.gamma * returns[i + 1]
 
-  def normalize_advantage(self, advantages):
-    """
+            #######################################################
+            #########          END YOUR CODE.          ############
+            all_returns.append(returns)
+        returns = np.concatenate(all_returns)
+
+        return returns
+
+    def normalize_advantage(self, advantages):
+        """
     Normalizes the advantage. This function is called only if self.config.normalize_advantage is True.
 
     Args:
@@ -383,16 +456,17 @@ class PG(object):
     TODO:
     Normalize the advantages so that they have a mean of 0 and standard deviation of 1.
     """
-    #######################################################
-    #########   YOUR CODE HERE - 1-5 lines.   ############
+        #######################################################
+        #########   YOUR CODE HERE - 1-5 lines.   ############
 
-    
-    #######################################################
-    #########          END YOUR CODE.          ############
-    return advantages
+        advantages = (advantages - np.mean(advantages)) / np.std(advantages)
 
-  def calculate_advantage(self, returns, observations):
-    """
+        #######################################################
+        #########          END YOUR CODE.          ############
+        return advantages
+
+    def calculate_advantage(self, returns, observations):
+        """
     Calculates the advantage for each of the observations
     Args:
       returns: the returns
@@ -400,106 +474,117 @@ class PG(object):
     Returns:
       advantage: the advantage
     """
-    if self.config.use_baseline:
-      # override the behavior of advantage by subtracting baseline
-      advantages = self.baseline_network.calculate_advantage(returns, observations)
-    else:
-      advantages = returns
+        if self.config.use_baseline:
+            # override the behavior of advantage by subtracting baseline
+            advantages = self.baseline_network.calculate_advantage(
+                returns, observations
+            )
+        else:
+            advantages = returns
 
-    if self.config.normalize_advantage:
-      advantages = self.normalize_advantage(advantages)
+        if self.config.normalize_advantage:
+            advantages = self.normalize_advantage(advantages)
 
-    return advantages
+        return advantages
 
-  def train(self):
-    """
+    def train(self):
+        """
     Performs training
 
     You do not have to change or use anything here, but take a look
     to see how all the code you've written fits together!
     """
-    last_eval = 0
-    last_record = 0
-    scores_eval = []
+        last_eval = 0
+        last_record = 0
+        scores_eval = []
 
-    self.init_averages()
-    scores_eval = [] # list of scores computed at iteration time
+        self.init_averages()
+        scores_eval = []  # list of scores computed at iteration time
 
-    for t in range(self.config.num_batches):
+        for t in range(self.config.num_batches):
 
-      # collect a minibatch of samples
-      paths, total_rewards = self.sample_path(self.env)
-      scores_eval = scores_eval + total_rewards
-      observations = np.concatenate([path["observation"] for path in paths])
-      actions = np.concatenate([path["action"] for path in paths])
-      rewards = np.concatenate([path["reward"] for path in paths])
-      # compute Q-val estimates (discounted future returns) for each time step
-      returns = self.get_returns(paths)
+            # collect a minibatch of samples
+            paths, total_rewards = self.sample_path(self.env)
+            scores_eval = scores_eval + total_rewards
+            observations = np.concatenate([path["observation"] for path in paths])
+            actions = np.concatenate([path["action"] for path in paths])
+            rewards = np.concatenate([path["reward"] for path in paths])
+            # compute Q-val estimates (discounted future returns) for each time step
+            returns = self.get_returns(paths)
 
-      # advantage will depend on the baseline implementation
-      advantages = self.calculate_advantage(returns, observations)
+            # advantage will depend on the baseline implementation
+            advantages = self.calculate_advantage(returns, observations)
 
-      # run training operations
-      if self.config.use_baseline:
-        self.baseline_network.update_baseline(returns, observations)
-      self.sess.run(self.train_op, feed_dict={
-                    self.observation_placeholder : observations,
-                    self.action_placeholder : actions,
-                    self.advantage_placeholder : advantages})
+            # run training operations
+            if self.config.use_baseline:
+                self.baseline_network.update_baseline(returns, observations)
+            self.sess.run(
+                self.train_op,
+                feed_dict={
+                    self.observation_placeholder: observations,
+                    self.action_placeholder: actions,
+                    self.advantage_placeholder: advantages,
+                },
+            )
 
-      # tf stuff
-      if (t % self.config.summary_freq == 0):
-        self.update_averages(total_rewards, scores_eval)
-        self.record_summary(t)
+            # tf stuff
+            if t % self.config.summary_freq == 0:
+                self.update_averages(total_rewards, scores_eval)
+                self.record_summary(t)
 
-      # compute reward statistics for this batch and log
-      avg_reward = np.mean(total_rewards)
-      sigma_reward = np.sqrt(np.var(total_rewards) / len(total_rewards))
-      msg = "Average reward: {:04.2f} +/- {:04.2f}".format(avg_reward, sigma_reward)
-      self.logger.info(msg)
+            # compute reward statistics for this batch and log
+            avg_reward = np.mean(total_rewards)
+            sigma_reward = np.sqrt(np.var(total_rewards) / len(total_rewards))
+            msg = "Average reward: {:04.2f} +/- {:04.2f}".format(
+                avg_reward, sigma_reward
+            )
+            self.logger.info(msg)
 
-      if  self.config.record and (last_record > self.config.record_freq):
-        self.logger.info("Recording...")
-        last_record =0
-        self.record()
+            if self.config.record and (last_record > self.config.record_freq):
+                self.logger.info("Recording...")
+                last_record = 0
+                self.record()
 
-    self.logger.info("- Training done.")
-    export_plot(scores_eval, "Score", self.config.env_name, self.config.plot_output)
+        self.logger.info("- Training done.")
+        export_plot(scores_eval, "Score", self.config.env_name, self.config.plot_output)
 
-  def evaluate(self, env=None, num_episodes=1):
-    """
+    def evaluate(self, env=None, num_episodes=1):
+        """
     Evaluates the return for num_episodes episodes.
     Not used right now, all evaluation statistics are computed during training
     episodes.
     """
-    if env==None: env = self.env
-    paths, rewards = self.sample_path(env, num_episodes)
-    avg_reward = np.mean(rewards)
-    sigma_reward = np.sqrt(np.var(rewards) / len(rewards))
-    msg = "Average reward: {:04.2f} +/- {:04.2f}".format(avg_reward, sigma_reward)
-    self.logger.info(msg)
-    return avg_reward
+        if env == None:
+            env = self.env
+        paths, rewards = self.sample_path(env, num_episodes)
+        avg_reward = np.mean(rewards)
+        sigma_reward = np.sqrt(np.var(rewards) / len(rewards))
+        msg = "Average reward: {:04.2f} +/- {:04.2f}".format(avg_reward, sigma_reward)
+        self.logger.info(msg)
+        return avg_reward
 
-  def record(self):
-     """
+    def record(self):
+        """
      Recreate an env and record a video for one episode
      """
-     env = gym.make(self.config.env_name)
-     env.seed(self.r_seed)
-     env = gym.wrappers.Monitor(env, self.config.record_path, video_callable=lambda x: True, resume=True)
-     self.evaluate(env, 1)
+        env = gym.make(self.config.env_name)
+        env.seed(self.r_seed)
+        env = gym.wrappers.Monitor(
+            env, self.config.record_path, video_callable=lambda x: True, resume=True
+        )
+        self.evaluate(env, 1)
 
-  def run(self):
-    """
+    def run(self):
+        """
     Apply procedures of training for a PG.
     """
-    # initialize
-    self.initialize()
-    # record one game at the beginning
-    if self.config.record:
-        self.record()
-    # model
-    self.train()
-    # record one game at the end
-    if self.config.record:
-      self.record()
+        # initialize
+        self.initialize()
+        # record one game at the beginning
+        if self.config.record:
+            self.record()
+        # model
+        self.train()
+        # record one game at the end
+        if self.config.record:
+            self.record()

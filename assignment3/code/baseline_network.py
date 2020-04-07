@@ -3,29 +3,30 @@ import numpy as np
 import pdb
 from network_utils import build_mlp
 
+
 class BaselineNetwork(object):
-  """
+    """
   Class for implementing Baseline network
   """
-  def __init__(self, env, config, observation_placeholder):
-    self.config = config
-    self.env = env
-    self.observation_placeholder = observation_placeholder
-    
-    self.add_baseline_placeholder()
-    
-    self.baseline = None
-    self.lr = self.config.learning_rate
 
-  def add_baseline_placeholder(self):
-    self.baseline_target_placeholder = tf.placeholder(tf.float32, shape=(None,))
+    def __init__(self, env, config, observation_placeholder):
+        self.config = config
+        self.env = env
+        self.observation_placeholder = observation_placeholder
 
+        self.add_baseline_placeholder()
 
-  def set_session(self, session):
-    self.sess = session
-    
-  def add_baseline_op(self, scope = "baseline"):
-    """
+        self.baseline = None
+        self.lr = self.config.learning_rate
+
+    def add_baseline_placeholder(self):
+        self.baseline_target_placeholder = tf.placeholder(tf.float32, shape=(None,))
+
+    def set_session(self, session):
+        self.sess = session
+
+    def add_baseline_op(self, scope="baseline"):
+        """
     Build the baseline network within the scope.
 
     In this function we will build the baseline network.
@@ -47,16 +48,31 @@ class BaselineNetwork(object):
             HINT: use AdamOptimizer with self.lr
 
     """
-    ######################################################
-    #########   YOUR CODE HERE - 4-8 lines.   ############
-    
-    # TODO
-    #######################################################
-    #########          END YOUR CODE.          ############
+        ######################################################
+        #########   YOUR CODE HERE - 4-8 lines.   ############
 
+        self.baseline = tf.squeeze(
+            build_mlp(
+                mlp_input=self.observation_placeholder,
+                output_size=1,
+                scope=scope,
+                n_layers=self.config.n_layers,
+                size=self.config.layer_size,
+                output_activation=None,
+            ),
+            axis=-1,
+        )
+        loss = tf.compat.v1.losses.mean_squared_error(
+            labels=self.baseline_target_placeholder, predictions=self.baseline
+        )
+        optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
+        self.update_baseline_op = optimizer.minimize(loss)
 
-  def calculate_advantage(self, returns, observations):
-    """
+        #######################################################
+        #########          END YOUR CODE.          ############
+
+    def calculate_advantage(self, returns, observations):
+        """
     Calculate the advantage
 
     Args:
@@ -72,15 +88,20 @@ class BaselineNetwork(object):
     HINT: evaluate the self.baseline with self.sess.run(...)
 
     """
-    #######################################################
-    #########   YOUR CODE HERE - 1-4 lines.   ############
-      
-    #######################################################
-    #########          END YOUR CODE.          ############
-    return adv
-  
-  def update_baseline(self, returns, observations):
-    """
+        #######################################################
+        #########   YOUR CODE HERE - 1-4 lines.   ############
+
+        baseline = self.sess.run(
+            self.baseline, feed_dict={self.observation_placeholder: observations}
+        )
+        adv = returns - baseline
+
+        #######################################################
+        #########          END YOUR CODE.          ############
+        return adv
+
+    def update_baseline(self, returns, observations):
+        """
     Update the baseline from given returns and observation.
 
     Args:
@@ -90,9 +111,16 @@ class BaselineNetwork(object):
       apply the baseline update op with the observations and the returns.
       HINT: Run self.update_baseline_op with self.sess.run(...)
     """
-    #######################################################
-    #########   YOUR CODE HERE - 1-5 lines.   ############
-    
-    # TODO
-    #######################################################
-    #########          END YOUR CODE.          ############
+        #######################################################
+        #########   YOUR CODE HERE - 1-5 lines.   ############
+
+        baseline = self.sess.run(
+            self.update_baseline_op,
+            feed_dict={
+                self.observation_placeholder: observations,
+                self.baseline_target_placeholder: returns,
+            },
+        )
+
+        #######################################################
+        #########          END YOUR CODE.          ############

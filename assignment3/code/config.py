@@ -36,7 +36,7 @@ class config_cartpole:
 
 class config_pendulum:
     def __init__(self, use_baseline, r_seed):
-        self.env_name="InvertedPendulum-v1"
+        self.env_name="InvertedPendulum-v2"
         self.record = True 
         baseline_str = 'baseline' if use_baseline else 'no_baseline'
         seed_str = 'r_seed=' + str(r_seed)
@@ -71,7 +71,7 @@ class config_pendulum:
 
 class config_cheetah:
     def __init__(self, use_baseline, r_seed):
-        self.env_name="HalfCheetah-v1"
+        self.env_name="HalfCheetah-v2"
         self.record = True 
         baseline_str = 'baseline' if use_baseline else 'no_baseline'
         seed_str = 'r_seed=' + str(r_seed)
